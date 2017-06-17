@@ -3,6 +3,29 @@
 set -o nounset
 set -o errexit
 
+# code from http://stackoverflow.com/a/1116890
+function readlink()
+{
+    TARGET_FILE=$2
+    cd `dirname $TARGET_FILE`
+    TARGET_FILE=`basename $TARGET_FILE`
+
+    # Iterate down a (possible) chain of symlinks
+    while [ -L "$TARGET_FILE" ]
+    do
+        TARGET_FILE=`readlink $TARGET_FILE`
+        cd `dirname $TARGET_FILE`
+        TARGET_FILE=`basename $TARGET_FILE`
+    done
+
+    # Compute the canonicalized name by finding the physical path
+    # for the directory we're in and appending the target file.
+    PHYS_DIR=`pwd -P`
+    RESULT=$PHYS_DIR/$TARGET_FILE
+    echo $RESULT
+}
+export -f readlink
+
 VERBOSE_MODE=0
 
 function error_handler()
@@ -15,18 +38,16 @@ function error_handler()
 trap "error_handler" ERR
 
 PROGNAME=`basename ${BASH_SOURCE}`
-DRY_RUN_MODE=0
 
 function print_usage_and_exit()
 {
   set +x
   local STATUS=$1
-  echo "Usage: ${PROGNAME} [-v] [-v] [--dry-run] [-h] [--help]"
+  echo "Usage: ${PROGNAME} [-v] [-v] [-h] [--help]"
   echo ""
   echo " Options -"
   echo "  -v                 enables verbose mode 1"
   echo "  -v -v              enables verbose mode 2"
-  echo "      --dry-run      show what would have been dumped"
   echo "  -h, --help         shows this help message"
   exit ${STATUS:-0}
 }
@@ -38,7 +59,7 @@ function debug()
   fi
 }
 
-GETOPT=`getopt -o vh --long dry-run,help -n "${PROGNAME}" -- "$@"`
+GETOPT=`getopt vh $*`
 if [ $? != 0 ] ; then print_usage_and_exit 1; fi
 
 eval set -- "${GETOPT}"
@@ -46,7 +67,6 @@ eval set -- "${GETOPT}"
 while true
 do case "$1" in
      -v)            let VERBOSE_MODE+=1; shift;;
-     --dry-run)     DRY_RUN_MODE=1; shift;;
      -h|--help)     print_usage_and_exit 0;;
      --)            shift; break;;
      *) echo "Internal error!"; exit 1;;
@@ -119,8 +139,8 @@ CONTEXT=${CORPUS_DIR}/context.pbtxt
 TMP_DIR=${CORPUS_DIR}/tmp/syntaxnet-output
 MODEL_DIR=${CDIR}/models
 
-POS_HIDDEN_LAYER_SIZES=64
-POS_HIDDEN_LAYER_PARAMS=64
+TAGGER_HIDDEN_LAYER_SIZES=64
+TAGGER_HIDDEN_LAYER_PARAMS=64
 
 PARSER_HIDDEN_LAYER_SIZES=512,512
 PARSER_HIDDEN_LAYER_PARAMS='512x512'
@@ -134,11 +154,11 @@ function convert_corpus {
 	done
 }
 
-POS_PARAMS=${POS_HIDDEN_LAYER_PARAMS}-0.08-3600-0.9-0
-function train_pos_tagger {
+TAGGER_PARAMS=${TAGGER_HIDDEN_LAYER_PARAMS}-0.08-3600-0.9-0
+function train_tagger {
 	${BINDIR}/parser_trainer \
 	  --task_context=${CONTEXT} \
-	  --arg_prefix=brain_pos \
+	  --arg_prefix=brain_tagger \
 	  --compute_lexicon \
 	  --graph_builder=greedy \
 	  --training_corpus=training-corpus \
@@ -146,12 +166,12 @@ function train_pos_tagger {
 	  --output_path=${TMP_DIR} \
 	  --batch_size=${BATCH_SIZE} \
 	  --decay_steps=3600 \
-	  --hidden_layer_sizes=${POS_HIDDEN_LAYER_SIZES} \
+	  --hidden_layer_sizes=${TAGGER_HIDDEN_LAYER_SIZES} \
 	  --learning_rate=0.08 \
 	  --momentum=0.9 \
 	  --beam_size=1 \
 	  --seed=0 \
-	  --params=${POS_PARAMS} \
+	  --params=${TAGGER_PARAMS} \
 	  --num_epochs=12 \
 	  --report_every=100 \
 	  --checkpoint_every=1000 \
@@ -161,14 +181,14 @@ function train_pos_tagger {
 function preprocess_with_tagger {
 	for SET in training tuning test; do
 		${BINDIR}/parser_eval \
-		--task_context=${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/context \
-		--hidden_layer_sizes=${POS_HIDDEN_LAYER_SIZES} \
+		--task_context=${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/context \
+		--hidden_layer_sizes=${TAGGER_HIDDEN_LAYER_SIZES} \
 	    --batch_size=${BATCH_SIZE} \
 		--input=${SET}-corpus \
 		--output=tagged-${SET}-corpus \
-		--arg_prefix=brain_pos \
+		--arg_prefix=brain_tagger \
 		--graph_builder=greedy \
-		--model_path=${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/model
+		--model_path=${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/model
 	done
 }
 
@@ -185,7 +205,7 @@ function pretrain_parser {
 	  --momentum=0.85 \
 	  --beam_size=1 \
 	  --output_path=${TMP_DIR} \
-	  --task_context=${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/context \
+	  --task_context=${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/context \
 	  --seed=4 \
 	  --training_corpus=tagged-training-corpus \
 	  --tuning_corpus=tagged-tuning-corpus \
@@ -251,17 +271,28 @@ function evaluate_parser {
 	done
 }
 
-function copy_model {
-	# needs : category-map  label-map	lcword-map  prefix-table  suffix-table	tag-map  tag-to-category  word-map
+function xcopy_model {
 	cp -rf ${TMP_DIR}/brain_parser/structured/${GP_PARAMS}/model ${MODEL_DIR}/parser-params
-	cp -rf ${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/model ${MODEL_DIR}/tagger-params
-	cp -rf ${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/*-map ${MODEL_DIR}/
-	cp -rf ${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/*-table ${MODEL_DIR}/
-	cp -rf ${TMP_DIR}/brain_pos/greedy/${POS_PARAMS}/tag-to-category ${MODEL_DIR}/
+	cp -rf ${TMP_DIR}/brain_parser/structured/${GP_PARAMS}/model.meta ${MODEL_DIR}/parser-params.meta
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/model ${MODEL_DIR}/tagger-params
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/model.meta ${MODEL_DIR}/tagger-params.meta
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/*-map ${MODEL_DIR}/
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/*-table ${MODEL_DIR}/
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/tag-to-category ${MODEL_DIR}/
+}
+
+function copy_model {
+	mkdir -p ${MODEL_DIR}/parser-params
+	cp -rf ${TMP_DIR}/brain_parser/structured/${GP_PARAMS}/model.* ${MODEL_DIR}/parser-params
+	mkdir -p ${MODEL_DIR}/tagger-params
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/model.* ${MODEL_DIR}/tagger-params
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/*-map ${MODEL_DIR}/
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/*-table ${MODEL_DIR}/
+	cp -rf ${TMP_DIR}/brain_tagger/greedy/${TAGGER_PARAMS}/tag-to-category ${MODEL_DIR}/
 }
 
 convert_corpus ${CORPUS_DIR}
-train_pos_tagger
+train_tagger
 preprocess_with_tagger
 pretrain_parser
 evaluate_pretrained_parser

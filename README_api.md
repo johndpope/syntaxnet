@@ -5,26 +5,34 @@
 
 - server
 ```bash
-# you can create a shell script with content below!
+# bazel versions : 0.2.2b ( see : https://github.com/dsindex/syntaxnet/issues/17 )
 
 $ git clone https://github.com/dsindex/syntaxnet.git work
 $ cd work
 $ git clone --recurse-submodules https://github.com/tensorflow/serving
+# checkout proper version of serving
+$ cd serving
+$ git checkout 89e9dfbea055027bc31878ee8da66b54a701a746
+$ git submodule update --init --recursive
 # checkout proper version of tf_models
-$ cd serving/tf_models
+$ cd tf_models
 $ git checkout a4b7bb9a5dd2c021edcd3d68d326255c734d0ef0
 
-# you need to install gRPC properly
-# https://tensorflow.github.io/serving/setup
-# if you have a trouble, see https://github.com/dsindex/tensorflow#tensorflow-serving
+# you can use the tf_models/syntaxnet to build your own model and serve it.
+# note that if you have an error(-fno-canonical-system-headers) while compiling syntaxnet on OS X Sierra, 
+# modify tf_models/syntaxnet/tensorflow/tensorflow/workspace.bzl file :
+# native.git_repository(
+#    name = "re2",
+#    remote = "https://github.com/google/re2.git",
+#    commit = "ae9cb49",
+#  )
 
 # apply patch by dmansfield to serving/tf_models/syntaxnet 
-$ cd serving/tf_models
 $ patch -p1 < ../../api/pr250-patch-a4b7bb9a.diff.txt
-$ cd ../../
+$ cd ../
 
 # configure serving/tensorflow
-$ cd serving/tensorflow
+$ cd tensorflow
 $ ./configure
 $ cd ../../
 
@@ -46,10 +54,38 @@ $ cp api/parsey_api* serving/tensorflow_serving/example/
 
 # build parsey_api 
 $ cd serving
+# please check bazel version == 0.2.2b
 $ bazel --output_user_root=bazel_root build --nocheck_visibility -c opt -s //tensorflow_serving/example:parsey_api --genrule_strategy=standalone --spawn_strategy=standalone --verbose_failures
 
-# make softlink for referencing 'syntaxnet/models/parsey_mcparseface/context.pbtxt'
-$ ln -s ./tf_models/syntaxnet/syntaxnet syntaxnet
+# if you have a trouble on downloading zlib ( https://github.com/tensorflow/tensorflow/issues/6668 )
+# modify bellow files :
+# ./tf_models/syntaxnet/WORKSPACE
+# ./tensorflow/tensorflow/workspace.bzl
+# ./tf_models/syntaxnet/tensorflow/tensorflow/workspace.bzl
+# see : https://github.com/tensorflow/tensorflow/issues/6594
+# 1. ./tf_models/syntaxnet/WORKSPACE
+# new_http_archive(
+#      name = "ts_zlib_archive",
+#      url = "http://zlib.net/fossils/zlib-1.2.8.tar.gz",
+#      sha256 = "36658cb768a54c1d4dec43c3116c27ed893e88b02ecfcb44f2166f9c0b7f2a0d",
+#      strip_prefix = "zlib-1.2.8",
+#      build_file = "zlib.BUILD",
+# )
+# 2. ./tensorflow/tensorflow/workspace.bzl
+# native.new_http_archive(
+#    name = "zlib_archive",
+#    url = "http://zlib.net/fossils/zlib-1.2.8.tar.gz",
+#    sha256 = "36658cb768a54c1d4dec43c3116c27ed893e88b02ecfcb44f2166f9c0b7f2a0d",
+#    build_file = path_prefix + "zlib.BUILD",
+#  )
+# 3. ./tf_models/syntaxnet/tensorflow/tensorflow/workspace.bzl
+# native.new_http_archive(
+#      name = "zlib_archive",
+#      url = "http://zlib.net/fossils/zlib-1.2.8.tar.gz",
+#      sha256 = "36658cb768a54c1d4dec43c3116c27ed893e88b02ecfcb44f2166f9c0b7f2a0d",
+#      strip_prefix = "zlib-1.2.8",
+#      build_file = path_prefix + "zlib.BUILD",
+# )
 
 # run parsey_api with exported model
 $ ./bazel-bin/tensorflow_serving/example/parsey_api --port=9000 ../api/parsey_model
@@ -57,15 +93,13 @@ $ ./bazel-bin/tensorflow_serving/example/parsey_api --port=9000 ../api/parsey_mo
 
 - node client
 ```bash
-$ cd api/parsey_client
+$ cd ../api/parsey_client
 $ cp index_org.js index.js
 $ npm install
 
-# if you have a trouble, check your version of node,npm
+# if you have a trouble, check node / npm / grpc
 $ node --version
-v4.4.7
 $ npm --version
-2.15.8
 # you need to install grpc for node
 $ npm install grpc
 
@@ -93,22 +127,28 @@ $ node index.js
 
 - python client
 ```bash
-# how to generate 'parsey_api_pb2.py'?
-$ which grpc_python_plugin
-# if this returns nothing, gRPC was not properly installed. see https://github.com/tensorflow/serving/issues/42
-$ cd serving
-$ protoc -I ./  --python_out=. --grpc_out=. --plugin=protoc-gen-grpc=`which grpc_python_plugin` ./tensorflow_serving/example/parsey_api.proto
-$ cd ..
+# you need to install gRPC properly( https://tensorflow.github.io/serving/setup )
+# if you have a trouble, see https://github.com/dsindex/tensorflow#tensorflow-serving
 
 # download protobuf_json.py for converting protobuf to json
+$ cd ../..
 $ git clone https://github.com/dpp-name/protobuf-json.git
 $ cp protobuf-json/protobuf_json.py serving/tensorflow_serving/example/
 
+$ cd serving
+
+# create softlink for `parsey_api.proto`
+$ ln -s ./tf_models/syntaxnet/syntaxnet syntaxnet
+
+# generate 'parsey_api_pb2.py'
+$ which grpc_python_plugin
+# if this returns nothing, gRPC was not properly installed. see https://github.com/tensorflow/serving/issues/42
+$ protoc -I ./  --python_out=. --grpc_out=. --plugin=protoc-gen-grpc=`which grpc_python_plugin` ./tensorflow_serving/example/parsey_api.proto
+
 # copy parsey_client.py to serving/tensorflow_serving/example
-$ cp api/parsey_client.py serving/tensorflow_serving/example
+$ cp ../api/parsey_client.py tensorflow_serving/example
 
 # build it
-$ cd serving
 $ bazel --output_user_root=bazel_root build --nocheck_visibility -c opt -s //tensorflow_serving/example:parsey_client --genrule_strategy=standalone --spawn_strategy=standalone --verbose_failures
 $ ls bazel-bin/tensorflow_serving/example/parsey_client
 
@@ -146,10 +186,8 @@ result {
 - export model
 ```bash
 # copy parsey_mcparseface.py to serving/tensorflow_serving/example
-# buid it
-$ cd ../
-$ cp api/parsey_mcparseface.py serving/tensorflow_serving/example
-$ cd serving
+$ cp ../api/parsey_mcparseface.py tensorflow_serving/example
+# build it
 $ bazel --output_user_root=bazel_root build --nocheck_visibility -c opt -s //tensorflow_serving/example:parsey_mcparseface --genrule_strategy=standalone --spawn_strategy=standalone --verbose_failures
 $ ls bazel-bin/tensorflow_serving/example/parsey_mcparseface
 
@@ -157,11 +195,52 @@ $ ls bazel-bin/tensorflow_serving/example/parsey_mcparseface
 # this will read model from --model_dir and export to --export_path directory
 $ bazel-bin/tensorflow_serving/example/parsey_mcparseface --model_dir=syntaxnet/models/parsey_mcparseface --export_path=exported
 
-# if you want to export a trained model, 
-# set proper path in ../models/context.pbtxt
+# modify all path in exported/00000001/assets/context.pbtxt
+# for example, 
+# from
+# input {
+#  name: "tag-map"
+#  Part {
+#    file_pattern: "syntaxnet/models/parsey_mcparseface/tag-map"
+#  }
+# }
+# to
+# input {
+#  name: "tag-map"
+#  Part {
+#    file_pattern: "tag-map"
+#  }
+# }
+
+# run parsey_api with exported model
+$ ./bazel-bin/tensorflow_serving/example/parsey_api --port=9000 exported/00000001
+
+
+# if you want to export a model trained by the same version of syntaxnet(==tf_model/syntaxnet), 
+# copy trained models to current directory and set proper path in models/context.pbtxt
 # ex) file_pattern: 'OUTPATH/label-map' -> file_pattern: '/path/to/label-map'
-$ cat ../models/context.pbtxt.template | sed "s=OUTPATH=/path/to=" > ../models/context.pbtxt
-$ bazel-bin/tensorflow_serving/example/parsey_mcparseface --model_dir=../models --export_path=exported
+$ cat models/context.pbtxt.template | sed "s=OUTPATH=/path/to=" > models/context.pbtxt
+$ bazel-bin/tensorflow_serving/example/parsey_mcparseface --model_dir=models --export_path=exported
+
+# modify all path in exported/00000001/assets/context.pbtxt since those paths are not neccessary.
+# for example, 
+# from
+# input {
+#  name: "tag-map"
+#  Part {
+#    file_pattern: "syntaxnet/models/parsey_mcparseface/tag-map"
+#  }
+# }
+# to
+# input {
+#  name: "tag-map"
+#  Part {
+#    file_pattern: "tag-map"
+#  }
+# }
+
+# run parsey_api with exported model
+$ ./bazel-bin/tensorflow_serving/example/parsey_api --port=9000 exported/00000001
 
 ```
 
@@ -172,20 +251,35 @@ $ bazel-bin/tensorflow_serving/example/parsey_mcparseface --model_dir=../models 
 
 # export parsing model only
 # replace serving/tensorflow_serving/example/parsey_mcparseface.py with parsey_sejong.py
+$ cp ../api/parsey_sejong.py tensorflow_serving/example/parsey_mcparseface.py
 # build it
-$ cd ../
-$ cp api/parsey_sejong.py serving/tensorflow_serving/example/parsey_mcparseface.py
-$ cd serving
 $ bazel --output_user_root=bazel_root build --nocheck_visibility -c opt -s //tensorflow_serving/example:parsey_mcparseface --genrule_strategy=standalone --spawn_strategy=standalone --verbose_failures
 $ ls bazel-bin/tensorflow_serving/example/parsey_mcparseface
 
-# set proper path in ../models_sejong/context.pbtxt
+# copy trained models_sejong to current directory and set proper path in models_sejong/context.pbtxt
 # ex) file_pattern: 'OUTPATH/label-map' -> file_pattern: '/path/to/label-map'
-$ cat ../models_sejong/context.pbtxt.template | sed "s=OUTPATH=/path/to=" > ../models_sejong/context.pbtxt
+$ cat models_sejong/context.pbtxt.template | sed "s=OUTPATH=/path/to=" > models_sejong/context.pbtxt
 
 # run
 # this will read model from --model_dir and export to --export_path directory
-$ bazel-bin/tensorflow_serving/example/parsey_mcparseface --model_dir=../models_sejong --export_path=exported_sejong
+$ bazel-bin/tensorflow_serving/example/parsey_mcparseface --model_dir=models_sejong --export_path=exported_sejong
+
+# modify all path in exported_sejong/00000001/assets/context.pbtxt since those paths are not neccessary.
+# for example, 
+# from
+# input {
+#  name: "tag-map"
+#  Part {
+#    file_pattern: "syntaxnet/models/parsey_mcparseface/tag-map"
+#  }
+# }
+# to
+# input {
+#  name: "tag-map"
+#  Part {
+#    file_pattern: "tag-map"
+#  }
+# }
 
 # run parsey_api with exported model
 $ ./bazel-bin/tensorflow_serving/example/parsey_api --port=9000 exported_sejong/00000001
@@ -224,19 +318,17 @@ $ node index.js | more
 ...
 }
 
+cd ../..
+cd serving
+
 # python client
 # replace serving/tensorflow_serving/example/parsey_client.py with parsey_sejong_client.py
-$ cp api/parsey_sejong_client.py serving/tensorflow_serving/example/parsey_client.py
+$ cp ../api/parsey_sejong_client.py tensorflow_serving/example/parsey_client.py
 
-# parsey_sejong_client.py import konlpy, protobuf_json
+# parsey_sejong_client.py import konlpy
 # so, you need to install konlpy( http://konlpy.org/ko/v0.4.3/install/ )
 
-# download protobuf_json.py for converting protobuf to json
-$ git clone https://github.com/dpp-name/protobuf-json.git
-$ cp protobuf-json/protobuf_json.py serving/tensorflow_serving/example/
-
 # build it
-$ cd serving
 $ bazel --output_user_root=bazel_root build --nocheck_visibility -c opt -s //tensorflow_serving/example:parsey_client --genrule_strategy=standalone --spawn_strategy=standalone --verbose_failures
 $ ls bazel-bin/tensorflow_serving/example/parsey_client
 
@@ -246,27 +338,5 @@ $ bazel-bin/tensorflow_serving/example/parsey_client --server=localhost:9000
 nput :  나는 학교에 간다
 Parsing :
 {"result": [{"text": "나 는 학교 에 가 ㄴ다", "token": [{"category": "NP", "head": 1, "end": 2, "label": "MOD", "start": 0, "tag": "NP", "word": "나"}, {"category": "JX", "head": 4, "end": 6, "label": "NP_SBJ", "start": 4, "tag": "JX", "word": "는"}, {"category": "NNG", "head": 3, "end": 13, "label": "MOD", "start": 8, "tag": "NNG", "word": "학교"}, {"category": "JKB", "head": 4, "end": 17, "label": "NP_AJT", "start": 15, "tag": "JKB", "word": "에"}, {"category": "VV", "head": 5, "end": 21, "label": "MOD", "start": 19, "tag": "VV", "word": "가"}, {"category": "EC", "end": 28, "label": "ROOT", "start": 23, "tag": "EC", "word": "ㄴ다"}], "docid": "-:0"}]}
-
-# how to run parsey_client.py(or parsey_client_sejong.py) in other place?
-# find out PYTHONPATH
-$ vi bazel-bin/tensorflow_serving/example/parsey_client
-# add 'print python_path'
-# and run parsey_client to get PYTHONPATH
-# ex)
-# /path/to/serving/bazel-bin/tensorflow_serving/example/parsey_client.runfiles:/path/to/serving/bazel-bin/tensorflow_serving/example/parsey_client.runfiles/external/protobuf/python:/path/to/serving/bazel-bin/tensorflow_serving/example/parsey_client.runfiles/external/protobuf:/path/to/serving/bazel-bin/tensorflow_serving/example/parsey_client.runfiles/external/six_archive:/path/to/serving/bazel-bin/tensorflow_serving/example/parsey_client.runfiles/external/org_tensorflow:/path/to/serving/bazel-bin/tensorflow_serving/example/parsey_client.runfiles/external/syntaxnet
-
-# export PYTHONPATH
-$ export PYTHONPATH='yours'
-
-$ mkdir www
-$ cp api/parsey_client_sejong.py www/
-$ cp api/protobuf-json/protobuf_json.py www
-$ cd www
-$ python parsey_sejong_client.py --server=localhost:9000
-D0729 16:23:20.180068734    5920 ev_posix.c:101]             Using polling engine: poll
-비가 내리는 여름날에
-Input :  비가 내리는 여름날에
-Parsing :
-{"result": [{"text": "비 가 내리 는 여름날 에", "token": [{"category": "NNG", "head": 1, "end": 2, "label": "MOD", "start": 0, "tag": "NNG", "word": "비"}, {"category": "JKS", "head": 2, "end": 6, "label": "NP_SBJ", "start": 4, "tag": "JKS", "word": "가"}, {"category": "VV", "head": 3, "end": 13, "label": "MOD", "start": 8, "tag": "VV", "word": "내리"}, {"category": "ETM", "head": 4, "end": 17, "label": "VP_MOD", "start": 15, "tag": "ETM", "word": "는"}, {"category": "NNG", "head": 5, "end": 27, "label": "MOD", "start": 19, "tag": "NNG", "word": "여름날"}, {"category": "JKB", "end": 31, "label": "ROOT", "start": 29, "tag": "JKB", "word": "에"}], "docid": "-:0"}]}
 
 ```

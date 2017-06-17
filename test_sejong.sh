@@ -2,6 +2,29 @@
 
 # To run on a conll formatted file, add the --conll command line argument.
 
+# code from http://stackoverflow.com/a/1116890
+function readlink()
+{
+    TARGET_FILE=$2
+    cd `dirname $TARGET_FILE`
+    TARGET_FILE=`basename $TARGET_FILE`
+
+    # Iterate down a (possible) chain of symlinks
+    while [ -L "$TARGET_FILE" ]
+    do
+        TARGET_FILE=`readlink $TARGET_FILE`
+        cd `dirname $TARGET_FILE`
+        TARGET_FILE=`basename $TARGET_FILE`
+    done
+
+    # Compute the canonicalized name by finding the physical path
+    # for the directory we're in and appending the target file.
+    PHYS_DIR=`pwd -P`
+    RESULT=$PHYS_DIR/$TARGET_FILE
+    echo $RESULT
+}
+export -f readlink
+
 CDIR=$(readlink -f $(dirname $(readlink -f ${BASH_SOURCE[0]})))
 PDIR=$(readlink -f $(dirname $(readlink -f ${BASH_SOURCE[0]}))/..)
 cd ${PDIR}
@@ -13,6 +36,13 @@ PARSER_EVAL=${BINDIR}/parser_eval
 CONLL2TREE=${BINDIR}/conll2tree
 
 MODEL_DIR=${CDIR}/models_sejong
+
+CONTEXT=${MODEL_DIR}/context.pbtxt
+cat ${CONTEXT}.template | sed "s=OUTPATH=${MODEL_DIR}=" > ${MODEL_DIR}/context
+CONTEXT=${MODEL_DIR}/context
+PARSER_MODEL_PATH=${MODEL_DIR}/parser-params/model
+XPARSER_MODEL_PATH=${MODEL_DIR}/parser-params
+PARSER_MODEL_PATH=${PARSER_MODEL_PATH}
 
 HIDDEN_LAYER_SIZES=512,512
 BATCH_SIZE=256
@@ -29,10 +59,10 @@ ${PARSER_EVAL} \
   --beam_size=${BEAM_SIZE} \
   --arg_prefix=brain_parser \
   --graph_builder=structured \
-  --task_context=${MODEL_DIR}/context.pbtxt \
+  --task_context=${CONTEXT} \
   --resource_dir=${MODEL_DIR} \
-  --model_path=${MODEL_DIR}/parser-params \
+  --model_path=${PARSER_MODEL_PATH} \
   | \
 ${CONLL2TREE} \
-  --task_context=${MODEL_DIR}/context.pbtxt \
+  --task_context=${CONTEXT} \
   --alsologtostderr

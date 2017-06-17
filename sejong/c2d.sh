@@ -3,6 +3,29 @@
 set -o nounset
 set -o errexit
 
+# code from http://stackoverflow.com/a/1116890
+function readlink()
+{
+    TARGET_FILE=$2
+    cd `dirname $TARGET_FILE`
+    TARGET_FILE=`basename $TARGET_FILE`
+
+    # Iterate down a (possible) chain of symlinks
+    while [ -L "$TARGET_FILE" ]
+    do
+        TARGET_FILE=`readlink $TARGET_FILE`
+        cd `dirname $TARGET_FILE`
+        TARGET_FILE=`basename $TARGET_FILE`
+    done
+
+    # Compute the canonicalized name by finding the physical path
+    # for the directory we're in and appending the target file.
+    PHYS_DIR=`pwd -P`
+    RESULT=$PHYS_DIR/$TARGET_FILE
+    echo $RESULT
+}
+export -f readlink
+
 VERBOSE_MODE=0
 
 function error_handler()
@@ -15,18 +38,16 @@ function error_handler()
 trap "error_handler" ERR
 
 PROGNAME=`basename ${BASH_SOURCE}`
-DRY_RUN_MODE=0
 
 function print_usage_and_exit()
 {
   set +x
   local STATUS=$1
-  echo "Usage: ${PROGNAME} [-v] [-v] [--dry-run] [-h] [--help]"
+  echo "Usage: ${PROGNAME} [-v] [-v] [-h] [--help]"
   echo ""
   echo " Options -"
   echo "  -v                 enables verbose mode 1"
   echo "  -v -v              enables verbose mode 2"
-  echo "      --dry-run      show what would have been dumped"
   echo "  -h, --help         shows this help message"
   exit ${STATUS:-0}
 }
@@ -38,7 +59,7 @@ function debug()
   fi
 }
 
-GETOPT=`getopt -o vh --long dry-run,help -n "${PROGNAME}" -- "$@"`
+GETOPT=`getopt vh $*`
 if [ $? != 0 ] ; then print_usage_and_exit 1; fi
 
 eval set -- "${GETOPT}"
@@ -46,7 +67,6 @@ eval set -- "${GETOPT}"
 while true
 do case "$1" in
      -v)            let VERBOSE_MODE+=1; shift;;
-     --dry-run)     DRY_RUN_MODE=1; shift;;
      -h|--help)     print_usage_and_exit 0;;
      --)            shift; break;;
      *) echo "Internal error!"; exit 1;;
@@ -97,7 +117,8 @@ LDIR=${CDIR}/log
 for SET in training tuning test; do
 	${python} ${CDIR}/c2d.py --mode=0 < ${WDIR}/sejong_treebank.txt.v1.${SET} > ${WDIR}/sejong_treebank.txt.v2.${SET} 2> ${WDIR}/sejong_treebank.txt.v2.${SET}.err
 	${python} ${CDIR}/c2d.py --mode=1 < ${WDIR}/sejong_treebank.txt.v2.${SET} > ${WDIR}/deptree.txt.v2.${SET}         2> ${WDIR}/deptree.txt.v2.${SET}.err
-	${python} ${CDIR}/align.py < ${WDIR}/deptree.txt.v2.${SET} > ${WDIR}/deptree.txt.v3.${SET}
+	[ "${SET}" == "training" ] && extend=1 || extend=0
+	${python} ${CDIR}/align.py --extend=${extend} < ${WDIR}/deptree.txt.v2.${SET} > ${WDIR}/deptree.txt.v3.${SET}
 done
 
 

@@ -4,8 +4,9 @@
 
 - [syntaxnet](#syntaxnet)
     - [description](#description)
+    - [history](#history)
     - [how to test](#how-to-test)
-    - [download univeral dependency treebank data( http://universaldependencies.org/#en )](#download-univeral-dependency-treebank-data-httpuniversaldependenciesorgen-)
+    - [univeral dependency corpus](#univeral-dependency-corpus)
     - [training tagger and parser with another corpus](#training-tagger-and-parser-with-another-corpus)
     - [training parser only](#training-parser-only)
     - [test new model](#test-new-model)
@@ -14,6 +15,8 @@
     - [apply korean POS tagger(Komoran via konlpy)](#apply-korean-pos-taggerkomoran-via-konlpy)
     - [tensorflow serving and syntaxnet](#tensorflow-serving-and-syntaxnet)
     - [parsey's cousins](#parseys-cousins)
+    - [dragnn](#dragnn)
+    - [brat annotation tool](#brat-annotation-tool)
     - [comparison to BIST parser](#comparison-to-bist-parser)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
@@ -22,42 +25,79 @@ syntaxnet
 ===
 
 ### description
-- test code for [syntaxnet](https://github.com/tensorflow/models/tree/master/syntaxnet) 
-- last update : 2016. 8. 16
-  - [after syntaxnet last commit](https://github.com/tensorflow/models/commit/a5d45f2ed20effaabc213a2eb9def291354af1ec)
+
+- test code for [syntaxnet](https://github.com/tensorflow/models/tree/master/syntaxnet)
+  - training and test a model using UD corpus.
+  - training and test a Korean parser model using the Sejong corpus.
+  - exporting a trained model and serving(limited to the designated version of syntaxnet(old one))
+  - training and test a model using dragnn.
+  - comparision to bist-parser.
+
+### history
+- `2017. 3. 27`
+  - test for dragnn
+  - version
+  ```
+  python : 2.7
+  bazel  : 0.4.3
+  protobuf : 3.2.0
+  syntaxnet : 40a5739ae26baf6bfa352d2dec85f5ca190254f8
+  ```
+
+- `2017. 3. 10`
+  - modify for recent version of syntaxnet(tf 1.0), OS X(bash script), universal treebank v2.0
+  - version
+  ```
+  python : 2.7
+  bazel  : 0.4.3
+  protobuf : 3.0.0b2, 3.2.0
+  syntaxnet : bc70271a51fe2e051b5d06edc6b9fd94880761d5
+  ```
+
+- `2016. 8. 16`
   - add 'char-map' to context.pbtxt' for train
   - add '--resource_dir' for test
-    - remove path to each files in 'context.pbtxt'
-    - if you installed old syntaxnet version(ex, a4b7bb9a5dd2c021edcd3d68d326255c734d0ef0 ), you should specify path to each files in 'context.pbtxt'
+    - if you installed old version of syntaxnet(ex, a4b7bb9a5dd2c021edcd3d68d326255c734d0ef0 ), you should specify path to each files in 'context.pbtxt'
+  - version
+  ```
+  syntaxnet : a5d45f2ed20effaabc213a2eb9def291354af1ec
+  ```
 
 ### how to test
 ```shell
-(after installing syntaxnet)
+# after installing syntaxnet.
+# gpu supporting : https://github.com/tensorflow/models/issues/248#issuecomment-288991859
 $ pwd
 /path/to/models/syntaxnet
 $ git clone https://github.com/dsindex/syntaxnet.git work
 $ cd work
 $ echo "hello syntaxnet" | ./demo.sh
-(training parser only with parsed corpus)
+# training parser only with parsed corpus
 $ ./parser_trainer_test.sh
 ```
 
-### download univeral dependency treebank data( http://universaldependencies.org/#en )
+### univeral dependency corpus
+
+- [UD official website](http://universaldependencies.org/)
+  - [tutorial](http://universaldependencies.org/eacl17tutorial/)
+  - [CoNLL-U format](http://universaldependencies.org/format.html)
+- [UPPipe](https://ufal.mff.cuni.cz/udpipe)
+  - [udpipe(git)](https://github.com/ufal/udpipe)
+- prepare data
 ```shell
 $ cd work
 $ mkdir corpus
 $ cd corpus
-(downloading ud-treebanks-v1.2.tgz)
-$ tar -zxvf ud-treebanks-v1.2.tgz  
-$ ls universal-dependencies-1.2 
+# downloading ud-treebanks-v2.0.tgz
+$ tar -zxvf ud-treebanks-v2.0.tgz  
+$ ls universal-dependencies-2.0 
 $ UD_Ancient_Greek  UD_Basque  UD_Czech ....
 ```
 
 ### training tagger and parser with another corpus
 ```shell
-(for example, training UD_English)
-(detail instructions can be found 
- in https://github.com/tensorflow/models/tree/master/syntaxnet)
+# for example, training UD_English.
+# detail instructions can be found in https://github.com/tensorflow/models/tree/master/syntaxnet
 $ ./train.sh -v -v
 ...
 #preprocessing with tagger
@@ -85,8 +125,7 @@ INFO:tensorflow:Seconds elapsed in evaluation: 34.97, eval metric: 83.49%
 
 ### training parser only
 ```shell
-(in case you have other pos-tagger 
- and want to build parser only from the parsed corpus) 
+# if you have other pos-tagger and want to build parser only from the parsed corpus :
 $ ./train_p.sh -v -v
 ...
 #pretrain parser
@@ -119,7 +158,7 @@ tagger NN ROOT
  +-- and CC cc
  +-- parser NN conj
 
-* original model
+# original model
 $ echo "this is my own tagger and parser" | ./demo.sh
 Input: this is my own tagger and parser
 Parse:
@@ -142,7 +181,7 @@ brought VBD ROOT
  |   +-- to IN case
  +-- . . punct
 
-* original model
+# original model
 $ echo "Bob brought the pizza to Alice ." | ./demo.sh
 Input: Bob brought the pizza to Alice .
 Parse:
@@ -155,8 +194,10 @@ brought VBD ROOT
  +-- . . punct
 ```
 
-### training parser from korean sejong treebank corpus
+### training parser from Sejong treebank corpus
 ```shell
+# the corpus is accessible through the path on this image : https://raw.githubusercontent.com/dsindex/blog/master/images/url_sejong.png
+# copy sejong_treebank.txt.v1 to `sejong` directory.
 $ ./sejong/split.sh
 $ ./sejong/c2d.sh
 $ ./train_sejong.sh
@@ -241,7 +282,7 @@ Parse:
 ```
 ### apply korean POS tagger(Komoran via konlpy)
 ```shell
-* install konlpy ( http://konlpy.org/ko/v0.4.3/ )
+# after installing konlpy ( http://konlpy.org/ko/v0.4.3/ )
 $ python sejong/tagger.py
 나는 학교에 간다.
 1	나	나	NP	NP	_	0	_	_	_
@@ -265,7 +306,7 @@ Parse:
 ```
 - [related thread](https://github.com/dsindex/syntaxnet/issues/4)
 - [web demo created by https://github.com/xtknight](http://sejongpsg.ddns.net/syntaxnet/psg_tree.htm)
-![sample](https://dl.dropboxusercontent.com/u/5061852/deptree.png)
+![sample](https://raw.githubusercontent.com/dsindex/blog/master/images/deptree.png)
 
 ### tensorflow serving and syntaxnet
 - [using tensorflow serving](https://github.com/dmansfield/parsey-mcparseface-api/issues/1)
@@ -273,7 +314,7 @@ Parse:
 ```shell
 $ bazel-bin/tensorflow_serving/example/parsey_client --server=localhost:9000
 나는 학교에 간다
-nput :  나는 학교에 간다
+Input :  나는 학교에 간다
 Parsing :
 {"result": [{"text": "나 는 학교 에 가 ㄴ다", "token": [{"category": "NP", "head": 1, "end": 2, "label": "MOD", "start": 0, "tag": "NP", "word": "나"}, {"category": "JX", "head": 4, "end": 6, "label": "NP_SBJ", "start": 4, "tag": "JX", "word": "는"}, {"category": "NNG", "head": 3, "end": 13, "label": "MOD", "start": 8, "tag": "NNG", "word": "학교"}, {"category": "JKB", "head": 4, "end": 17, "label": "NP_AJT", "start": 15, "tag": "JKB", "word": "에"}, {"category": "VV", "head": 5, "end": 21, "label": "MOD", "start": 19, "tag": "VV", "word": "가"}, {"category": "EC", "end": 28, "label": "ROOT", "start": 23, "tag": "EC", "word": "ㄴ다"}], "docid": "-:0"}]}
 ...
@@ -285,6 +326,7 @@ Parsing :
 ```shell
 # download models from http://download.tensorflow.org/models/parsey_universal/<language>.zip
 
+# for `English`
 $ echo "Bob brought the pizza to Alice." | ./parse.sh
 
 # tokenizing
@@ -352,5 +394,140 @@ the hyperparameters for POS tagger :
   - learning_rate=0.08
   - momentum=0.9
 ```
+
+### dragnn
+- how to compile examples
+```
+$ cd ../
+$ pwd
+/path/to/models/syntaxnet
+$ bazel build -c opt //examples/dragnn:tutorial_1
+```
+- training tagger and parser with CoNLL corpus
+```
+# compile
+$ pwd
+/path/to/models/syntaxnet
+$ bazel build -c opt //work/dragnn_examples:write_master_spec
+$ bazel build -c opt //work/dragnn_examples:train_dragnn
+$ bazel build -c opt //work/dragnn_examples:inference_dragnn
+# training
+$ cd work
+$ ./train_dragnn.sh -v -v
+...
+INFO:tensorflow:training step: 25300, actual: 25300
+INFO:tensorflow:training step: 25400, actual: 25400
+INFO:tensorflow:finished step: 25400, actual: 25400
+INFO:tensorflow:Annotating datset: 2002 examples
+INFO:tensorflow:Done. Produced 2002 annotations
+INFO:tensorflow:Total num documents: 2002
+INFO:tensorflow:Total num tokens: 25148
+INFO:tensorflow:POS: 85.63%
+INFO:tensorflow:UAS: 79.67%
+INFO:tensorflow:LAS: 74.36%
+...
+# test
+$ echo "i love this one" | ./test_dragnn.sh
+Input: i love this one
+Parse:
+love VBP root
+ +-- i PRP nsubj
+ +-- one CD obj
+     +-- this DT det
+```
+- training parser with Sejong corpus
+```
+# compile
+$ pwd
+/path/to/models/syntaxnet
+$ bazel build -c opt //work/dragnn_examples:write_master_spec
+$ bazel build -c opt //work/dragnn_examples:train_dragnn
+$ bazel build -c opt //work/dragnn_examples:inference_dragnn_sejong
+# training
+$ cd work
+# to prepare corpus, please refer to `training parser from Sejong treebank corpus` section.
+$ ./train_dragnn_sejong.sh -v -v
+...
+INFO:tensorflow:training step: 33100, actual: 33100
+INFO:tensorflow:training step: 33200, actual: 33200
+INFO:tensorflow:finished step: 33200, actual: 33200
+INFO:tensorflow:Annotating datset: 4114 examples
+INFO:tensorflow:Done. Produced 4114 annotations
+INFO:tensorflow:Total num documents: 4114
+INFO:tensorflow:Total num tokens: 97002
+INFO:tensorflow:POS: 93.95%
+INFO:tensorflow:UAS: 91.38%
+INFO:tensorflow:LAS: 87.76%
+...
+# test
+# after installing konlpy ( http://konlpy.org/ko/v0.4.3/ )
+$ echo "제주로 가는 비행기가 심한 비바람에 회항했다." | ./test_dragnn_sejong.sh
+INFO:tensorflow:Read 1 documents
+Input: 제주 로 가 는 비행기 가 심하 ㄴ 비바람 에 회항 하 았 다 .
+Parse:
+. SF VP
+ +-- 다 EF MOD
+     +-- 았 EP MOD
+         +-- 하 XSA MOD
+             +-- 회항 SN MOD
+                 +-- 가 JKS NP_SBJ
+                 |   +-- 비행기 NNG MOD
+                 |       +-- 는 ETM VP_MOD
+                 |           +-- 가 VV MOD
+                 |               +-- 로 JKB NP_AJT
+                 |                   +-- 제주 MAG MOD
+                 +-- 에 JKB NP_AJT
+                     +-- 비바람 NNG MOD
+                         +-- ㄴ SN MOD
+                             +-- 심하 VV NP
+# it seems that pos tagging results from the dragnn are somewhat incorrect.
+# so, i replace those to the results from the Komoran tagger.
+# you can modify 'inference_dragnn_sejong.py' to use the tags from the dragnn.
+Input: 제주 로 가 는 비행기 가 심하 ㄴ 비바람 에 회항 하 았 다 .
+Parse:
+. SF VP
+ +-- 다 EF MOD
+     +-- 았 EP MOD
+         +-- 하 XSV MOD
+             +-- 회항 NNG MOD
+                 +-- 가 JKS NP_SBJ
+                 |   +-- 비행기 NNG MOD
+                 |       +-- 는 ETM VP_MOD
+                 |           +-- 가 VV MOD
+                 |               +-- 로 JKB NP_AJT
+                 |                   +-- 제주 NNG MOD
+                 +-- 에 JKB NP_AJT
+                     +-- 비바람 NNG MOD
+                         +-- ㄴ ETM MOD
+                             +-- 심하 VA NP
+```
+- web api using tornado
+  - how to run
+  ```
+  # compile
+  $ pwd
+  /path/to/models/syntaxnet
+  $ bazel build -c opt //work/dragnn_examples:dragnn_dm
+  # start tornado web api
+  $ cd work/dragnn_examples/www
+  # start single process
+  $ ./start.sh -v -v 0 0
+  # despite tornado suppoting multi-processing, session of tensorflow is not fork-safe.
+  # so do not use multi-processing option.
+  # if you want to link to the model trained by Sejong corpus, just edit env.sh
+  # : enable_konlpy='True'
+
+  # http://hostip:8897 
+  # http://hostip:8897/dragnn?q=i love it
+  # http://hostip:8897/dragnn?q=나는 학교에 가서 공부했다.
+  ```
+  ![view(sample)](https://raw.githubusercontent.com/dsindex/syntaxnet/master/dragnn_examples/www/static/img/dragnn_api_view.png)
+  - [api output format(sample)](https://raw.githubusercontent.com/dsindex/syntaxnet/master/dragnn_examples/www/static/img/dragnn_api.png)
+
+### brat annotation tool
+
+- [brat](http://brat.nlplab.org/)
+- [conllu to brat format](https://github.com/spyysalo/conllu.py)
+- [reference](https://github.com/dsindex/blog/wiki/%5Bbrat%5D-brat-rapid-annotation-tool)
 
 ### comparison to [BIST parser](https://github.com/dsindex/bist-parser)
